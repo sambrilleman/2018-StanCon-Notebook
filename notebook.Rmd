@@ -14,12 +14,34 @@ output:
     number_sections: true
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+# Check version of rstanarm
+if ((!require(survival)) || (!require(cowplot)) || (!require(data.table)) ||
+    (!require(rstanarm)) || !(packageVersion('rstanarm') == '2.15.4.999'))
+  stop("\n\n",
+       "NOTE: Compiling this notebook requires a development version\n",
+       "of the rstanarm package with joint modelling functionality\n",
+       "to be installed. Please execute the following code in your\n",
+       "R session:\n\n",
+       "  if (!require(devtools)) install.packages('devtools')\n",
+       "  if (!require(survival)) install.packages('survival')\n",
+       "  if (!require(cowplot)) install.packages('cowplot')\n",
+       "  if (!require(data.table)) install.packages('data.table')\n",
+       "  if (!require(rstanarm) || !(packageVersion('rstanarm') == '2.15.4.999'))\n",
+       "    devtools::install_github(\n",
+       "      'sambrilleman/rstanarm', ref = 'stancon-2018',\n",
+       "      args = '--preclean', build_vignettes = FALSE,\n",
+       "      dependencies = TRUE)\n\n",
+       "and then recompile the notebook.\n\n")
 
 # Load packages
 library("knitr")
 library("rstan")
+library("data.table")
+library("cowplot")
+library("rstanarm")
 
 # Options
 rstan_options(auto_write = TRUE)
@@ -400,19 +422,7 @@ We see that a one unit increase in log serum bilirubin is associated with a 0.89
 
 The `jm.stan` file provided with this notebook is a simplified version of the Stan code underlying the `stan_jm` modelling function in the **rstanarm** package. However, estimating the model using the **rstanarm** provides us with much nicer output (for example, meaningful variable names!) as well as a broad range of post-estimation functionality, including model diagnostics, posterior predictions, dynamic predictions and more.
 
-To see this, we can first install the development version of **rstanarm** with the `stan_jm` modelling function:
-\
-```{r install_rstanarm, message=FALSE}
-if (!require(devtools))
-  install.packages("devtools")
-if (!require(rstanarm) || !exists("stan_jm", "package:rstanarm")) 
-  devtools::install_github(
-    "sambrilleman/rstanarm", dependencies = TRUE,
-    args = "--preclean", build_vignettes = FALSE)
-library(rstanarm)
-```
-
-and then fit our model again, this time using `stan_jm` with the customary R formula syntax and data frames:
+To see this, we can use the development version of **rstanarm** with joint modelling functionality to refit our model, this time using `stan_jm` with the customary R formula syntax and data frames:
 \
 ```{r fitmodel_rstanarm, warning = FALSE, message = FALSE}
 mod2 <- with_filecache(
