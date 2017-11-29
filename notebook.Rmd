@@ -423,9 +423,7 @@ mod1 <- with_filecache(
     file = "Stan/jm.stan", 
     data = standata,
     init = function() staninit,
-    control = list(adapt_delta = 0.95),
-    chains = 3, cores = 3, iter = 2000, 
-    seed = 12345, refresh = 20),
+    chains = 2, seed = 12345),
   filename = "mod1.rds")
 ```
 
@@ -451,8 +449,8 @@ mod2 <- with_filecache(
         albumin ~ year + (year | id)),
     formulaEvent = survival::Surv(futimeYears, death) ~ sex + trt, 
     dataLong = pbcLong, dataEvent = pbcSurv,
-    assoc = "etavalue", time_var = "year", basehaz = "bs",
-    chains = 3, cores = 3, iter = 2000, seed = 12345, refresh = 20),
+    time_var = "year", assoc = "etavalue", basehaz = "bs",
+    chains = 2, seed = 12345),
   filename = "mod2.rds")
 ```
 
