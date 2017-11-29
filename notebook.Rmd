@@ -18,8 +18,8 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 
 # Check version of rstanarm
-if ((!require(survival)) || (!require(cowplot)) || (!require(data.table)) ||
-    (!require(rstanarm)) || !(packageVersion('rstanarm') == '2.15.4.999'))
+if ((!require(survival)) || (!require(data.table)) ||
+    (!require(rstanarm)) || !(packageVersion('rstanarm') >= '2.15.4'))
   stop("\n\n",
        "NOTE: Compiling this notebook requires a development version\n",
        "of the rstanarm package with joint modelling functionality\n",
@@ -27,22 +27,19 @@ if ((!require(survival)) || (!require(cowplot)) || (!require(data.table)) ||
        "R session:\n\n",
        "  if (!require(devtools)) install.packages('devtools')\n",
        "  if (!require(survival)) install.packages('survival')\n",
-       "  if (!require(cowplot)) install.packages('cowplot')\n",
        "  if (!require(data.table)) install.packages('data.table')\n",
-       "  if (!require(rstanarm) || !(packageVersion('rstanarm') == '2.15.4.999'))\n",
+       "  if (!require(rstanarm) || !(packageVersion('rstanarm') >= '2.15.4'))\n",
        "    devtools::install_github(\n",
-       "      'sambrilleman/rstanarm', ref = 'stancon-2018',\n",
-       "      args = '--preclean', build_vignettes = FALSE,\n",
-       "      dependencies = TRUE)\n\n",
+       "      'stan-dev/rstanarm', args = '--preclean', \n",
+       "      build_vignettes = FALSE, dependencies = TRUE)\n\n",
        "and then recompile the notebook.\n\n")
 
 # Load packages
 library("knitr")
+library("ggplot2")
 library("rstan")
 library("data.table")
-library("cowplot")
 library("rstanarm")
-library("ggplot2")
 
 # Options
 rstan_options(auto_write = TRUE)
@@ -57,20 +54,26 @@ pbcSurv <- readRDS("Data/pbcSurv.rds")
 
 # Introduction
 
-Joint modelling can be broadly defined as the simultaneous estimation of two or more statistical models which traditionally would have been separately estimated. When we refer to a shared parameter joint model for longitudinal and time-to-event data, we generally mean the joint estimation of: 1) a longitudinal mixed effects model which analyses patterns of change in an outcome variable that has been measured repeatedly over time (for example, a clinical biomarker) and 2) a survival or time-to-event model which analyses the time until an event of interest occurs (for example, death or disease progression). Joint estimation of these so-called "submodels" is achieved by assuming they are correlated via individual-specific parameters (i.e. individual-level random effects). Over the last two decades the joint modelling of longitudinal and time-to-event data has received a significant amount of attention [1-5]. Methodological developments in the area have been motivated by a growing awareness of the benefits that a joint modelling approach can provide. 
-In clinical or epidemiological research it is common for a clinical biomarker to be repeatedly measured over time on a given patient. In addition, it is common for time-to-event data, such as the patient-specific time from a defined origin (e.g. time of diagnosis of a disease) until a terminating clinical event such as death or disease progression to also be collected. For example, the figure below shows observed longitudinal measurements (i.e. observed "trajectories") of log serum bilirubin for a small sample of primary bilary cirhosis patients. From the figure, we can observe between-patient variation in the longitudinal trajectories with some patients increasing over time, others decreasing, and some remaining stable. Moreover, there is variation between patients in terms of the frequency and timing of the longitudinal measurements. From a clinical perspective, we may be interested in asking whether the between-patient variation in the log serum bilirubin trajectories provides information that helps us understand differences in patient risk for some clinical event of interest, say, death. For example, we might be interested in the prognostic value of changes in log serum bilirubin, in terms of it's ability to help estimate patient-specific mortality risk. Alternatively, from an epidemiological perspective we might have a desire to understand the potential for an etiological association between changes in log serum bilirubin and mortality. Joint modelling approaches provide us with a framework under which we can begin to answer these types of clinical and epidemiological questions. 
+Joint modelling can be broadly defined as the simultaneous estimation of two or more statistical models which traditionally would have been separately estimated. When we refer to a shared parameter joint model for longitudinal and time-to-event data, we generally mean the joint estimation of: 1) a longitudinal mixed effects model which analyses patterns of change in an outcome variable that has been measured repeatedly over time (for example, a clinical biomarker) and 2) a survival or time-to-event model which analyses the time until an event of interest occurs (for example, death or disease progression). Joint estimation of these so-called "submodels" is achieved by assuming they are correlated via individual-specific parameters (i.e. individual-level random effects). 
 
-```{r traj_figure}
-patient_labels <- paste("Patient", 1:6)
+Over the last two decades the joint modelling of longitudinal and time-to-event data has received a significant amount of attention [1-5]. Methodological developments in the area have been motivated by a growing awareness of the benefits that a joint modelling approach can provide. In clinical or epidemiological research it is common for a clinical biomarker to be repeatedly measured over time on a given patient. In addition, it is common for time-to-event data, such as the patient-specific time from a defined origin (e.g. time of diagnosis of a disease) until a terminating clinical event such as death or disease progression to also be collected. The figure below shows observed longitudinal measurements (i.e. observed "trajectories") of log serum bilirubin for a small sample of patients with primary bilary cirrhosis. From the plots, we can observe between-patient variation in the longitudinal trajectories for log serum bilirubin, with some patients showing an increase in the biomarker over time, others decreasing, and some remaining stable. Moreover, there is variation between patients in terms of the frequency and timing of the longitudinal measurements. 
+\
+```{r traj_figure, echo=FALSE}
+# Plot observed longitudinal trajectories for log serum bilirubin
+ids <- c(25,31:33,36,38:40)
+pbcLong_subset <- pbcLong[pbcLong$id %in% ids, ]
+patient_labels <- paste("Patient", 1:8)
+names(patient_labels) <- ids
 ggplot() + 
-  geom_line(aes(y = logBili, x = year), 
-            pbcLong %>% filter(id %in% c(25,31:33,36,38:40))) + 
+  geom_line(aes(y = logBili, x = year), data = pbcLong_subset) + 
   facet_wrap(~ id, ncol = 4, labeller = labeller(id = patient_labels)) +
   ylab("Log serum bilirubin") +
   xlab("Time (years)")
 ```
 
-More formally, the motivations for undertaking a joint modelling approach of longitudinal and time-to-event data might include one or more of the following:
+From the perspective of clinical risk prediction, we may be interested in asking whether between-patient variation in the log serum bilirubin trajectories provides meaningful prognostic information that can help us differentiate patients with regard to some clinical event of interest, such as death. Alternatively, from an epidemiological perspective we may wish to explore the potential for etiological associations between changes in log serum bilirubin and mortality. Joint modelling approaches provide us with a framework under which we can begin to answer these types of clinical and epidemiological questions. 
+
+More formally, the motivations for undertaking a joint modelling analysis of longitudinal and time-to-event data might include one or more of the following:
 
 - One may be interested in how *underlying changes in the biomarker influence the occurrence of the event*. However, including the observed biomarker measurements directly into a time-to-event model as time-varying covariates poses several problems. For example, if the widely used Cox proportional hazards model is assumed for the time-to-event model then biomarker measurements need to be available for all patients at all failure times, which is unlikely to be the case [3]. If simple methods of imputation are used, such as the "last observation carried forward" method, then these are likely to induce bias [6]. Furthermore, the observed biomarker measurements may be subject to measurement error and therefore their inclusion as time-varying covariates may result in biased and inefficient estimates. In most cases, the measurement error will result in parameter estimates which are shrunk towards the null [7]. On the other hand, joint modelling approaches allow us to estimate the association between the biomarker (or some function of the biomarker trajectory, such as rate of change in the biomarker) and the risk of the event, whilst allowing for both the discrete time and measurement-error aspects of the observed biomarker.
 
@@ -469,7 +472,7 @@ p2 <- posterior_traj(mod2, m = 2, ids = 6:8)
 p3 <- posterior_survfit(mod2, ids = 6:8, draws = 200)
 pp1 <- plot(p1, plot_observed = TRUE, vline = TRUE)
 pp2 <- plot(p2, plot_observed = TRUE, vline = TRUE)
-plot_stack(yplot = list(pp1, pp2), survplot = plot(p3))
+plot_stack_jm(yplot = list(pp1, pp2), survplot = plot(p3))
 ```
 
 Here we can see the strong relationship between the underlying values of the biomarkers and mortality. Patient `8` who, relative to patients `6` and `7`, has a higher underlying value for log serum bilirubin and a lower underlying value for serum albumin at the end of their follow up has a far worse predicted probability of survival. 
