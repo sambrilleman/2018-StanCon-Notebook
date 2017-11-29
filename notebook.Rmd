@@ -56,7 +56,7 @@ pbcSurv <- readRDS("Data/pbcSurv.rds")
 
 Joint modelling can be broadly defined as the simultaneous estimation of two or more statistical models which traditionally would have been separately estimated. When we refer to a shared parameter joint model for longitudinal and time-to-event data, we generally mean the joint estimation of: 1) a longitudinal mixed effects model which analyses patterns of change in an outcome variable that has been measured repeatedly over time (for example, a clinical biomarker) and 2) a survival or time-to-event model which analyses the time until an event of interest occurs (for example, death or disease progression). Joint estimation of these so-called "submodels" is achieved by assuming they are correlated via individual-specific parameters (i.e. individual-level random effects). 
 
-Over the last two decades the joint modelling of longitudinal and time-to-event data has received a significant amount of attention [1-5]. Methodological developments in the area have been motivated by a growing awareness of the benefits that a joint modelling approach can provide. In clinical or epidemiological research it is common for a clinical biomarker to be repeatedly measured over time on a given patient. In addition, it is common for time-to-event data, such as the patient-specific time from a defined origin (e.g. time of diagnosis of a disease) until a terminating clinical event such as death or disease progression to also be collected. The figure below shows observed longitudinal measurements (i.e. observed "trajectories") of log serum bilirubin for a small sample of patients with primary bilary cirrhosis. Solid lines are used for those patients who were still alive at the end of follow up, while dashed lines are used for those patients who died. From the plots, we can observe between-patient variation in the longitudinal trajectories for log serum bilirubin, with some patients showing an increase in the biomarker over time, others decreasing, and some remaining stable. Moreover, there is variation between patients in terms of the frequency and timing of the longitudinal measurements. 
+Over the last two decades the joint modelling of longitudinal and time-to-event data has received a significant amount of attention [1-5]. Methodological developments in the area have been motivated by a growing awareness of the benefits that a joint modelling approach can provide. In clinical or epidemiological research it is common for a clinical biomarker to be repeatedly measured over time on a given patient. In addition, it is common for time-to-event data, such as the patient-specific time from a defined origin (e.g. time of diagnosis of a disease) until a terminating clinical event such as death or disease progression to also be collected. The figure below shows observed longitudinal measurements (i.e. observed "trajectories") of log serum bilirubin for a small sample of patients with primary biliary cirrhosis. Solid lines are used for those patients who were still alive at the end of follow up, while dashed lines are used for those patients who died. From the plots, we can observe between-patient variation in the longitudinal trajectories for log serum bilirubin, with some patients showing an increase in the biomarker over time, others decreasing, and some remaining stable. Moreover, there is variation between patients in terms of the frequency and timing of the longitudinal measurements. 
 \
 ```{r traj_figure, echo=FALSE}
 # Plot observed longitudinal trajectories for log serum bilirubin
@@ -85,7 +85,7 @@ More formally, the motivations for undertaking a joint modelling analysis of lon
 
 - Joint models are naturally suited to the task of *dynamic risk prediction*. For example, joint modelling approaches have been used to develop prognostic models where predictions of event risk can be updated as new longitudinal biomarker measurements become available. Taylor et al. [11] jointly modelled longitudinal measurements of the prostate specific antigen (PSA) and time to clinical recurrence of prostate cancer. The joint model was then used to develop a web-based calculator which could provide real-time predictions of the probability of recurrence based on a patient's up to date PSA measurements.
 
-In this notebook, we describe the implementation of a shared parameter joint model for longitudinal and time-to-event data in Stan. In Section 2 we describe the formulation for a multivariate joint model, that is, a joint model for multiple (i.e. more than one) longitudinal biomarkers and the time to a terminating event. In Section 3 we describe the important features of the Stan code required to fit the model. In Section 4 we present a brief applied example to demonstrate estimation of the model and the type of inferences that can be obtained. Note that the methods and code described in this paper are a simplified version of the `stan_jm` modelling function that is being contributed to the **rstanarm** R package [12,13], see https://github.com/sambrilleman/rstanarm.
+In this notebook, we describe the implementation of a shared parameter joint model for longitudinal and time-to-event data in Stan. In Section 2 we describe the formulation for a multivariate joint model, that is, a joint model for multiple (i.e. more than one) longitudinal biomarkers and the time to a terminating event. In Section 3 we describe the important features of the Stan code required to fit the model. In Section 4 we present a brief applied example to demonstrate estimation of the model and the type of inferences that can be obtained. Note that the methods and code described in this paper are a simplified version of the `stan_jm` modelling function that is being contributed to the **rstanarm** R package [12,13], see https://github.com/stan-dev/rstanarm or https://github.com/sambrilleman/rstanarm.
 
 # Model formulation 
 
@@ -199,7 +199,7 @@ p(\boldsymbol{\theta}, \boldsymbol{b}_{i} | \boldsymbol{y}_{i}, T_i, d_i)
     \log p(\boldsymbol{\theta})
 \end{align}
 
-where $\sum_{j=1}^{n_i} \log p(y_{ijm} | \boldsymbol{b}_{i}, \boldsymbol{\theta})$ is the log likelihood for the $m^{th}$ longitudinal submodel, $\log p(T_i, d_i | \boldsymbol{b}_{i}, \boldsymbol{\theta})$ is the log likelihood for the event submodel, $\log p(\boldsymbol{b}_{i} | \boldsymbol{\theta})$ is the log likelihood for the distribution of the group-specific parameters (i.e. random effects), and $\log p(\boldsymbol{\theta})$ represents the log likelihood for the joint prior distribution across all remaining unknown parameters.^[In this notebook we assume normal prior distributions for all unbounded parameters (e.g. regression coefficients) and half-normals for all lower-bounded parameters (e.g. standard deviations). In the **rstanarm** package there is a variety of prior distributions available. Moreover, the prior for the variance-covariance of individual-specific parameters is taken from the `stan_glmer` modelling function in the **rstanarm** package; we refer the reader to the documentation of that package for those details.]
+where $\sum_{j=1}^{n_i} \log p(y_{ijm} | \boldsymbol{b}_{i}, \boldsymbol{\theta})$ is the log likelihood for the $m^{th}$ longitudinal submodel, $\log p(T_i, d_i | \boldsymbol{b}_{i}, \boldsymbol{\theta})$ is the log likelihood for the event submodel, $\log p(\boldsymbol{b}_{i} | \boldsymbol{\theta})$ is the log likelihood for the distribution of the group-specific parameters (i.e. random effects), and $\log p(\boldsymbol{\theta})$ represents the log likelihood for the joint prior distribution across all remaining unknown parameters.^[In this notebook we assume normal prior distributions for all unbounded parameters (e.g. regression coefficients) and half-normals for all lower-bounded parameters (e.g. standard deviations). However, in the **rstanarm** package there is a variety of prior distributions available to the user. For the prior distribution for the variance-covariance matrix of the group-specific parameters (i.e. the variance-covariance matrix for the individual-level random effects) we use a decomposition of the variance-covariance matrix into a vector of standard deviations and a correlation matrix. We then place a half-Cauchy prior distribution on each of the standard deviations, and use the LKJ correlation matrix distribution (parameterised in terms of it's Cholesky factor) as the prior for the correlation matrix of the group-specific parameters. Further details of this prior distribution are described in the Stan User Manual and the implementation can be seen in the `jm.stan` file included with this notebook. Importantly however, when using the `stan_jm` modelling function in the **rstanarm** package, the user can control the hyperparameters related to this prior distribution. Moreover, the user can instead choose to place a prior  on a further decomposed version of the variance-covariance matrix, whereby the vector of standard deviations are further decomposed into a trace and a simplex vector. This latter option is taken directly from the prior distribution described for variance-covariance matrices in the **rstanarm** package's `stan_glmer` modelling, and we refer the reader to the documentation of that package for further details.]
 
 We can rewrite the log likelihood for the event submodel as
 
@@ -221,52 +221,73 @@ Therefore, once we have an individual's event time $T_i$ we can evaluate the des
 
 # Stan code
 
-Here we describe the most important features of the Stan code used to estimate the joint model. The full Stan code is provided in the separate `jm.stan` file supplied with this notebook.
+Here we describe the most important features of the Stan code used to estimate the joint model. The full Stan code is provided in the separate `jm.stan` file supplied with this notebook. To simplify things for the reader, we have limited ourselves to the situation in which $M=2$ (i.e. we have two longitudinal biomarkers) and each of those longitudinal outcomes is modelled using a linear mixed model (i.e. identity link, normal distribution).
 
 ## Data and transformed data blocks
 
-The data block includes dimensions of the model, outcome vectors (observed biomarker values, event times, event indicators), design matrices for the different submodels, and hyperparameters for the prior distributions. We do not discuss the data or transformed data blocks here in any detail.
+The data block includes dimensions of the model, outcome vectors (e.g. observed biomarker values and event times), design matrices for the different submodels, and hyperparameters for the prior distributions. We do not discuss the data or transformed data blocks here in any detail.
 
 ## Parameters block
 
 Most of the parameters defined in the parameters block are "primitive" or "unscaled", meaning that they will be given a prior distribution with mean 0 and scale 1 and then converted into the actual parameters used in the regression equation via the transformed parameters block. Our parameters block therefore includes:
 
-- `gamma`: the intercept for each of the longitudinal submodels, combined into a single vector. These intercept parameters are unbounded, given that each longitudinal submodel in our application consists of a linear mixed model (i.e. in our application we assume an identity link function and normal error distribution for each longitudinal biomarker).
-- `y_z_beta`: the primitive coefficients for each of the longitudinal submodels, combined into a single vector.
+- `y1_gamma`, `y2_gamma`: the intercept for each of the longitudinal submodels. These intercept parameters are unbounded, given that each longitudinal submodel in our application consists of a linear mixed model (i.e. in our application we assume an identity link function and normal error distribution for each longitudinal biomarker).
+- `y1_z_beta`, `y2_z_beta`: the primitive coefficients for each of the longitudinal submodels.
 - `e_z_beta`, `a_z_beta`: the primitive coefficients and primitive association parameters for the event submodel.
-- `y_aux_unscaled`: the unscaled standard deviations (SD) of the residual errors for each of the longitudinal submodels, combined into a single vector.
+- `y1_aux_unscaled`, `y2_aux_unscaled`: the unscaled standard deviations (SD) of the residual errors for each of the longitudinal submodels, combined into a single vector.
 - `e_aux_unscaled`: the unscaled coefficients for the B-spline terms used in the baseline hazard.
 
-The parameters block also includes the group-specific parameters, defined in the same way as for the `stan_glmer` modelling function in the **rstanarm** package. Since the specification of the group-specific terms is not the primary focus of this notebook we do not include the details here. Further details on specification of the group-specific terms can be found in the full `jm.stan` file supplied with this notebook, or in the help documentation for the **rstanarm** package. 
+The parameters block also includes the unscaled group-specific parameters (i.e. unscaled individual-level random effects). We specify these as a matrix, with the number of rows in the matrix equal to the total number of group-specific terms in the model, and the number of columns in the matrix equal to the total number of patients in the data (i.e. the total number of "groups").  We declare a parameter vector that contains the standard deviations for each of the group-specific parameters and a lower triangular matrix that corresponds to the Cholesky factor of the correlation matrix for the group-specific terms. The latter is declared using Stan's `cholesky_factor_corr` data type.   
 \
 ```{r stancode_pars, eval=FALSE}
 parameters {
-  vector[M] gamma;      // intercepts in long. submodels
-  vector[y_K] y_z_beta; // primitive coefs in long. submodels
+  real y1_gamma; // intercepts in long. submodels
+  real y2_gamma;
+  vector[y_K[1]] y1_z_beta; // primitive coefs in long. submodels
+  vector[y_K[2]] y2_z_beta;
   vector[e_K] e_z_beta; // primitive coefs in event submodel (log hazard ratios)
   vector[a_K] a_z_beta; // primitive assoc params (log hazard ratios)
-  vector<lower=0>[M] y_aux_unscaled; // unscaled residual error SDs 
+  real<lower=0> y1_aux_unscaled; // unscaled residual error SDs 
+  real<lower=0> y2_aux_unscaled; 
   vector[basehaz_df] e_aux_unscaled; // unscaled coefs for baseline hazard      
-  ...
+
+  // group level params   
+  vector<lower=0>[b_K] b_sd; // group level sds  
+  matrix[b_K,b_N] z_b_mat;   // unscaled group level params 
+  cholesky_factor_corr[b_K > 1 ? b_K : 0] 
+    b_cholesky;              // cholesky factor of corr matrix
 }
 ```
 
 ## Transformed parameters block
 
-The transformed parameters block includes code to alter the location and scale of the "primitive" or "unscaled" parameters, in order to obtain the actual parameters used in the regression submodels:
+The transformed parameters block includes code to alter the location and scale of the "primitive" or "unscaled" parameters, in order to obtain the actual parameters used in the regression submodels. 
+
+Note that in the code below `b_K` is the number of group-specific parameters in the model, so if `b_K > 1` then we will be estimating a correlation matrix for the group-specific parameters and, hence, we must transform the primitive group-specific parameters using `b_cholesky` and `b_sd`, rather than `b_sd` alone. If there was only one group-specific parameter in the model then there would be no correlation matrix (i.e. no `b_cholesky` parameter). Also note that for any *multivariate* joint model (i.e. more than one longitudinal outcome) we will have `b_K > 1`.
 \
 ```{r stancode_tpars, eval=FALSE}
 transformed parameters {
   ...
-  // coefficients and association parameters 
-  y_beta = y_z_beta .* y_prior_scale + y_prior_mean;
+  // coefs for long. submodels
+  y1_beta = y1_z_beta .* y1_prior_scale + y1_prior_mean;
+  y2_beta = y2_z_beta .* y2_prior_scale + y2_prior_mean;
+
+  // coefs for event submodel (incl. association parameters)
   e_beta = e_z_beta .* e_prior_scale + e_prior_mean;
   a_beta = a_z_beta .* a_prior_scale + a_prior_mean;
   
-  // auxiliary parameters
-  y_aux = y_aux_unscaled .* y_prior_scale_for_aux + y_prior_mean_for_aux;
+  // residual error SDs for long. submodels
+  y1_aux = y1_aux_unscaled * y_prior_scale_for_aux[1] + y_prior_mean_for_aux[1];
+  y2_aux = y2_aux_unscaled * y_prior_scale_for_aux[2] + y_prior_mean_for_aux[2];
+
+  // b-spline coefs for baseline hazard
   e_aux = e_aux_unscaled .* e_prior_scale_for_aux + e_prior_mean_for_aux;
-  ...
+ 
+  // group level params
+  if (b_K == 1) 
+    b_mat = (b_sd[1] * z_b_mat)'; 
+  else if (b_K > 1) 
+    b_mat = (diag_pre_multiply(b_sd, b_cholesky) * z_b_mat)';
 }
 ```
 
@@ -274,106 +295,145 @@ transformed parameters {
 
 The model block consists of several distinct parts. We describe each of these separately.
 
-In the first part of the model block, we evaluate the combined linear predictor for all longitudinal submodels, excluding their intercept terms. We then loop over the $1:M$ longitudinal submodels, and for each submodel $m$ we add the intercept term `gamma[m]` onto the linear predictor, and then increment the target with the resulting likelihood.
+In the first part of the model block, we evaluate the linear predictor for each of the $M$ longitudinal submodels at the respective observation times. We then increment the target with the resulting likelihood. To evaluate the linear predictor we call a user-defined function which is defined in the `functions {}` block at the start of the `jm.stan` file. This function takes the form:
+\
+```{r stancode_functiondef, eval=FALSE}
+  /** 
+  * Evaluate the linear predictor for the glmer submodel
+  *
+  * @param X Design matrix for fe
+  * @param Z Design matrix for re, for a single grouping factor
+  * @param Z_id Group indexing for Z
+  * @param gamma The intercept parameter
+  * @param beta Vector of population level parameters
+  * @param bMat Matrix of group level params
+  * @param shift Number of columns in bMat
+  *   that correpond to group level params from prior glmer submodels
+  * @return A vector containing the linear predictor for the glmer submodel
+  */  
+  vector evaluate_eta(matrix X, vector[] Z, int[] Z_id, real gamma, 
+                      vector beta, matrix bMat, int shift) {
+    int N = rows(X);    // num rows in design matrix
+    int K = rows(beta); // num predictors
+    int p = size(Z);    // num group level params
+    vector[N] eta;
+    
+    if (K > 0) eta = X * beta;
+    else eta = rep_vector(0.0, N);
+    
+    for (k in 1:p)
+      for (n in 1:N)
+        eta[n] = eta[n] + (bMat[Z_id[n], k + shift]) * Z[k,n];
+    
+    return eta;
+  } 
+```
+Such that the code in our model block is the following:
 \
 ```{r stancode_model1, eval=FALSE}
 model {
   //---- Log-lik for longitudinal submodels
   {
-    vector[N] y_eta; // linear predictor for long. submodels 
+    // declare linear predictors
+    vector[y_N[1]] y1_eta; 
+    vector[y_N[2]] y2_eta;
+
+    // evaluate linear predictor for each long. submodel
+    y1_eta = evaluate_eta(y1_X, y1_Z, y1_Z_id, y1_gamma, y1_beta, b_mat, 0);
+    y2_eta = evaluate_eta(y2_X, y2_Z, y2_Z_id, y2_gamma, y2_beta, b_mat, b_KM[1]);
     
-    // evaluate linear predictor for all long. submodels
-    y_eta = X * y_beta + csr_matrix_times_vector(N, q, w, v, u, b);
-  
-    // evaluate linear predictor for just submodel m and accumulate log-lik
-    for (m in 1:M) {
-      vector[NM[m]] y_eta_m; 
-      y_eta_m = y_eta[idx[m,1]:idx[m,2]] + gamma[m];
-      target += normal_lpdf(y[idx[m,1]:idx[m,2]] | y_eta_m, y_aux[m]);
-    }
+    // increment the target with the log-lik
+    target += normal_lpdf(y1 | y1_eta, y1_aux);
+    target += normal_lpdf(y2 | y2_eta, y2_aux);
   }
   ...
 ```
 
-To evaluate the event submodel likelihood we must evaluate $h_i(T_i)$ (i.e. the hazard for individual $i$ at their event or censoring time) as well as the cumulative hazard $\int_0^{T_i} h_i(s) ds$. Since we are going to evaluate the cumulative hazard using Gauss-Kronrod quadrature, this means calculating the hazard $h_i(t)$ at $T_i$ and 15 quadrature points between $0$ and $T_i$. To do this, we have constructed the design matrices in R evaulated at the necessary times; these are passed to Stan's data block (not shown here) as `e_Xq`, `y_Xq`, etc. In the code below there are several steps: 
+To evaluate the event submodel likelihood we must evaluate $h_i(T_i)$ for individuals who experienced the event (i.e. $d_i = 1$) (i.e. the hazard at their event time) as well as the cumulative hazard $\int_0^{T_i} h_i(s) ds$ for all individuals. Since we are going to evaluate the cumulative hazard using Gauss-Kronrod quadrature, this means calculating the hazard $h_i(t)$ at 15 quadrature points between $0$ and $T_i$ for each individual $i$. To do this, we have constructed the design matrices in R evaulated at the necessary times; these are passed to Stan's data block (not shown here) as `e_Xq`, `y1_Xq`, `y2_Xq` etc. In the code below there are several steps: 
 
-- In **Step 1** we use the event submodel design matrices to evaluate the $\boldsymbol{w}^T_i(t) \boldsymbol{\gamma}$ part of the event submodel's linear predictor at the event time $T_i$ and the 15 quadrature points between $0$ and $T_i$. 
-- The remainder of the event submodel's linear predictor consists of the term corresponding to the association structure: $\sum_{m=1}^M \alpha_{m} \eta_{im}(t)$. This involves the current value of the longitudinal submodel's linear predictor, so we must also evaluate the longitudinal submodel's linear predictor at the event time $T_i$ and the 15 quadrature points between $0$ and $T_i$. This is shown in **Step 2** of the code below. 
-- In **Step 3** we evaluate the log baseline hazard at the event time $T_i$ and the 15 quadrature points between $0$ and $T_i$.
+- In **Step 1** we use the event submodel design matrices to evaluate the $\boldsymbol{w}^T_i(t) \boldsymbol{\gamma}$ part of the event submodel's linear predictor at the observed event times and the 15 quadrature points between $0$ and $T_i$. 
+- The remainder of the event submodel's linear predictor consists of the term corresponding to the association structure: $\sum_{m=1}^M \alpha_{m} \eta_{im}(t)$. This involves the current value of the longitudinal submodel's linear predictor, so we must also evaluate the longitudinal submodel's linear predictor at the event times and the 15 quadrature points between $0$ and $T_i$. This is shown in **Step 2** of the code below. 
+- In **Step 3** we evaluate the log baseline hazard at the event times and the 15 quadrature points between $0$ and $T_i$.
 - In **Step 4** we combine the log baseline hazard with the event submodel linear predictor, that is, we evaluate $$\log h_i(t) = \log h_0(t) + \left( \boldsymbol{w}^T_i(t) \boldsymbol{\gamma} + \sum_{m=1}^M \alpha_{m} \eta_{im}(t) \right)$$ 
-- In **Steps 5** and **6** we use the evaluated hazards to construct the likelihood for the event submodel: the hazard evaluated at $T_i$ is separated out from the hazard evaluated at each of the quadrature points between $0$ and $T_i$, and the latter are used to evaluate the approximate cumulative hazard at the event time via the Gauss-Kronrod quadrature rule described in equation $\eqref{eq:gkrule}$.
+- In **Steps 5** and **6** the hazard evaluated at the event times is separated out from the hazard evaluated at each of the quadrature points. The latter will be used in **Step 7** to evaluate the approximate cumulative hazard at the event time via the Gauss-Kronrod quadrature rule described in equation $\eqref{eq:gkrule}$.
 - In **Step 7** we evaluate the log likelihood for the event submodel as $$\log p(T_i, d_i | \boldsymbol{b}_{i}, \boldsymbol{\theta}) = 
-  d_i * \log h_i(T_i) - \int_0^{T_i} h_i(s) ds$$ and increment the target with this result.
+  d_i * \log h_i(T_i) - \int_0^{T_i} h_i(s) ds$$ 
+  The first term in **Step 7** is the log hazard contribution to the log likelihood for the event submodel. The second term is the log survival contribution to the log likelihood for the event submodel. The latter is obtained by summing over the quadrature points to get the approximate integral (i.e. cumulative hazard). Note that the `qwts` vector already incorporates the necessary scaling such that the integral is evaluated over limits $(0, T_i)$ rather than $(-1, +1)$. We increment the target with the resulting log likelihood.
 \
 ```{r stancode_model2, eval=FALSE}
   //----- Log-lik for event submodel (Gauss-Kronrod quadrature)
   {
-    vector[sum(nrow_y_Xq)] y_eta_q; 
+    vector[nrow_y_Xq[1]] y1_eta_q; 
+    vector[nrow_y_Xq[2]] y2_eta_q;
     vector[nrow_e_Xq] e_eta_q; 
     vector[nrow_e_Xq] log_basehaz;
     vector[nrow_e_Xq] ll_haz_q;
-    vector[Npat] ll_haz_eventtime;
-    vector[Npat_times_quadnodes] ll_surv_eventtime;
-    real ll_event;
-    
+    vector[Nevents] log_haz_etimes;
+    vector[Npat_times_qnodes] log_haz_qtimes;
+  
     // Step 1: event submodel linear predictor at event time and quadrature points
     e_eta_q = e_Xq * e_beta;
     
     // Step 2: long. submodel linear predictor at event time and quadrature points
-    y_eta_q = y_Xq * y_beta + 
-      csr_matrix_times_vector(sum(nrow_y_Xq), q, w_Zq, v_Zq, u_Zq, b);
-  
+    y1_eta_q = evaluate_eta(y1_Xq, y1_Zq, y1_Zq_id, y1_gamma, y1_beta, b_mat, 0);
+    y2_eta_q = evaluate_eta(y2_Xq, y2_Zq, y2_Zq_id, y2_gamma, y2_beta, b_mat, b_KM[1]);
+
     // Step 2 (continued): add on contribution from association structure to 
     // the event submodel linear predictor at event time and quadrature points
-    for (m in 1:M) {
-      vector[nrow_y_Xq[m]] y_eta_q_m;
-      y_eta_q_m = y_eta_q[idx_q[m,1]:idx_q[m,2]] + gamma[m];
-      e_eta_q = e_eta_q + a_beta[m] * y_eta_q_m;
-    }	
+    e_eta_q = e_eta_q + a_beta[1] * y1_eta_q + a_beta[2] * y2_eta_q;
     
     // Step 3: log baseline hazard at event time and quadrature points
     log_basehaz = basehaz_X * e_aux;	
     
     // Step 4: log hazard at event time and quadrature points
-    ll_haz_q = e_d .* (log_basehaz + e_eta_q);
+    ll_haz_q = log_basehaz + e_eta_q;
     
-    // Step 5: log hazard contribution to the likelihood
-    ll_haz_eventtime = segment(ll_haz_q, 1, Npat);
+    // Step 5: log hazard at event times only 
+    // (i.e. log hazard contribution to the likelihood)
+    log_haz_etimes = head(log_haz_q, Nevents);
     
-    // Step 6: log survival contribution to the likelihood, obtained by  
-    // summing over the quadrature points to get the approximate integral
-    // (NB quadweight already incorporates the (b-a)/2 scaling such that the
-    // integral is evaluated over limits (a,b) rather than (-1,+1))
-    ll_surv_eventtime = quadweight .* 
-      exp(segment(ll_haz_q, Npat + 1, Npat_times_quadnodes));        
+    // Step 6: log hazard at quadrature points only
+    log_haz_qtimes = tail(log_haz_q, Npat_times_qnodes);
     
     // Step 7: log likelihood for event submodel
-    ll_event = sum(ll_haz_eventtime) - sum(ll_surv_eventtime);
-    target += ll_event;  
+    target += sum(log_haz_etimes) - dot_product(qwts, exp(log_haz_qtimes)); 
   }    
 ```
 
-We then increment the target with the log priors for each of the intercepts, coefficients, auxiliary parameters (including coefficients for the B-splines baseline hazard), and group-specific terms (i.e. individual-level random effects).
+We then increment the target with the log priors for each of the intercepts, coefficients, auxiliary parameters (including coefficients for the B-splines baseline hazard), and group-specific terms (i.e. individual-level random effects):
 \
 ```{r stanmodel_code9, eval=FALSE}
   //----- Log-priors
     
-    // intercepts
-    for (m in 1:M)
-      target += normal_lpdf(y_gamma[m] | 
-        y_prior_mean_for_intercept, y_prior_scale_for_intercept);    
+    // intercepts for long. submodels
+    target += normal_lpdf(y1_gamma | 
+      y_prior_mean_for_intercept[1], y_prior_scale_for_intercept[1]);    
+    target += normal_lpdf(y2_gamma | 
+      y_prior_mean_for_intercept[2], y_prior_scale_for_intercept[2]);    
 
-    // coefficients    
-    target += normal_lpdf(y_z_beta | 0, 1);
+    // coefficients for long. submodels   
+    target += normal_lpdf(y1_z_beta | 0, 1);
+    target += normal_lpdf(y2_z_beta | 0, 1);
+    
+    // coefficients for event submodel
     target += normal_lpdf(e_z_beta | 0, 1);
     target += normal_lpdf(a_z_beta | 0, 1);
     
-    // auxiliary parameters
-    target += normal_lpdf(y_aux_unscaled | 0, 1);
+    // residual error SDs for long. submodels
+    target += normal_lpdf(y1_aux_unscaled | 0, 1);
+    target += normal_lpdf(y2_aux_unscaled | 0, 1);
+    
+    // b-spline coefs for baseline hazard
     target += normal_lpdf(e_aux_unscaled | 0, 1);
 
-    // group-specific parameters
-    decov_lp(z_b, z_T, rho, zeta, tau, regularization, delta, shape, t, p);
+    // group level terms
+      // sds
+      target += student_t_lpdf(b_sd | b_prior_df, 0, b_prior_scale);
+      // primitive coefs
+      target += normal_lpdf(to_vector(z_b_mat) | 0, 1); 
+      // corr matrix
+      if (b_K > 1) 
+        target += lkj_corr_cholesky_lpdf(b_cholesky | b_prior_regularization);
 }
 ```
 
@@ -433,7 +493,7 @@ Since our primary interest is in the association between the current value of ea
 print(mod1, pars = "a_beta")
 ```
 
-We see that a one unit increase in log serum bilirubin is associated with a 0.89 (95% CrI: 0.38 to 1.46) unit increase in the log hazard of death, equivalent to a 2.44-fold (95% CrI: 1.46 to 4.31) *increase* in the hazard of death. Similarly, a one unit increase in serum albumin is associated with a 2.81 (95% CrI: 1.43 to 4.45) unit *decrease* in the log hazard of death. These estimates are broadly in line with what we would expect from a clinical perspective; that is, that higher serum bilirubin is associated with *worse* patient outcomes (i.e. higher risk of mortality), whilst higher serum albumin is associated with *better* patient outcomes (i.e. lower risk of mortality). However, recall that we have estimated this model with a very small dataset only used for demonstration purposes. Moreover, the number of mortality events ($N=29$) is even less than the number of patients since some patients are censored. In fact, if we were to not suppress Stan's warning messages, we would see that there is a number of divergent transitions when fitting the model, potentially owing to the limited amount of data we are using to estimate this model.
+We see that a one unit increase in log serum bilirubin is associated with a 0.72 (95% CrI: 0.17 to 1.29) unit increase in the log hazard of death, equivalent to a 2.05-fold (95% CrI: 1.19 to 3.63) *increase* in the hazard of death. Similarly, a one unit increase in serum albumin is associated with a 3.23 (95% CrI: 1.90 to 4.77) unit *decrease* in the log hazard of death. These estimates are broadly in line with what we would expect from a clinical perspective; that is, that higher serum bilirubin is associated with *worse* patient outcomes (i.e. higher risk of mortality), whilst higher serum albumin is associated with *better* patient outcomes (i.e. lower risk of mortality). However, recall that we have estimated this model with a very small dataset only used for demonstration purposes. Moreover, the number of mortality events ($N=29$) is even less than the number of patients since some patients are censored.
 
 ## Estimation using the joint modelling functionality in **rstanarm**
 
