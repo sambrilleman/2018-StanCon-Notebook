@@ -3,199 +3,90 @@
 // Copyright (C) 2016, 2017 Sam Brilleman
   
 functions {
-  
+
   /** 
-  * Create group-specific block-diagonal Cholesky factor, see section 2 of
-  * https://cran.r-project.org/web/packages/lme4/vignettes/lmer.pdf
-  * @param len_theta_L An integer indicating the length of returned vector, 
-  *   which lme4 denotes as m
-  * @param p An integer array with the number variables on the LHS of each |
-  * @param dispersion Scalar standard deviation of the errors, calles sigma by lme4
-  * @param tau Vector of scale parameters whose squares are proportional to the 
-  *   traces of the relative covariance matrices of the group-specific terms
-  * @param scale Vector of prior scales that are multiplied by elements of tau
-  * @param zeta Vector of positive parameters that are normalized into simplexes
-  *   and multiplied by the trace of the covariance matrix to produce variances
-  * @param rho Vector of radii in the onion method for creating Cholesky factors
-  * @param z_T Vector used in the onion method for creating Cholesky factors
-  * @return A vector that corresponds to theta in lme4
-  */
-    vector make_theta_L(int len_theta_L, int[] p, real dispersion,
-                        vector tau, vector scale, vector zeta,
-                        vector rho, vector z_T) {
-      vector[len_theta_L] theta_L;
-      int zeta_mark = 1;
-      int rho_mark = 1;
-      int z_T_mark = 1;
-      int theta_L_mark = 1;
-      
-      // each of these is a diagonal block of the implicit Cholesky factor
-      for (i in 1:size(p)) { 
-        int nc = p[i];
-        if (nc == 1) { // "block" is just a standard deviation
-          theta_L[theta_L_mark] = tau[i] * scale[i] * dispersion;
-          // unlike lme4, theta[theta_L_mark] includes the dispersion term in it
-          theta_L_mark = theta_L_mark + 1;
-        }
-        else { // block is lower-triangular               
-          matrix[nc,nc] T_i; 
-          real std_dev;
-          real T21;
-          real trace_T_i = square(tau[i] * scale[i] * dispersion) * nc;
-          vector[nc] pi = segment(zeta, zeta_mark, nc); // gamma(zeta | shape, 1)
-          pi = pi / sum(pi);                            // thus dirichlet(pi | shape)
-          
-          // unlike lme4, T_i includes the dispersion term in it
-          zeta_mark = zeta_mark + nc;
-          std_dev = sqrt(pi[1] * trace_T_i);
-          T_i[1,1] = std_dev;
-          
-          // Put a correlation into T_i[2,1] and scale by std_dev
-          std_dev = sqrt(pi[2] * trace_T_i);
-          T21 = 2.0 * rho[rho_mark] - 1.0;
-          rho_mark = rho_mark + 1;
-          T_i[2,2] = std_dev * sqrt(1.0 - square(T21));
-          T_i[2,1] = std_dev * T21;
-          
-          for (r in 2:(nc - 1)) { // scaled onion method to fill T_i
-            int rp1 = r + 1;
-            vector[r] T_row = segment(z_T, z_T_mark, r);
-            real scale_factor = sqrt(rho[rho_mark] / dot_self(T_row)) * std_dev;
-            z_T_mark = z_T_mark + r;
-            std_dev = sqrt(pi[rp1] * trace_T_i);
-            for(c in 1:r) T_i[rp1,c] = T_row[c] * scale_factor;
-            T_i[rp1,rp1] = sqrt(1.0 - rho[rho_mark]) * std_dev;
-            rho_mark = rho_mark + 1;
-          }
-          
-          // now vech T_i
-          for (c in 1:nc) for (r in c:nc) {
-            theta_L[theta_L_mark] = T_i[r,c];
-            theta_L_mark = theta_L_mark + 1;
-          }
-        }
-      }
-      return theta_L;
-    }
-  
-  /** 
-  * Create group-specific coefficients, see section 2 of
-  * https://cran.r-project.org/web/packages/lme4/vignettes/lmer.pdf
+  * Evaluate the linear predictor for the glmer submodel
   *
-  * @param z_b Vector whose elements are iid normal(0,sigma) a priori
-  * @param theta Vector with covariance parameters as defined in lme4
-  * @param p An integer array with the number variables on the LHS of each |
-  * @param l An integer array with the number of levels for the factor(s) on 
-  *   the RHS of each |
-  * @return A vector of group-specific coefficients
-  */
-    vector make_b(vector z_b, vector theta_L, int[] p, int[] l) {
-      vector[rows(z_b)] b;
-      int b_mark = 1;
-      int theta_L_mark = 1;
-      for (i in 1:size(p)) {
-        int nc = p[i];
-        if (nc == 1) {
-          real theta_L_start = theta_L[theta_L_mark];
-          for (s in b_mark:(b_mark + l[i] - 1)) 
-            b[s] = theta_L_start * z_b[s];
-          b_mark = b_mark + l[i];
-          theta_L_mark = theta_L_mark + 1;
-        }
-        else {
-          matrix[nc,nc] T_i = rep_matrix(0, nc, nc);
-          for (c in 1:nc) {
-            T_i[c,c] = theta_L[theta_L_mark];
-            theta_L_mark = theta_L_mark + 1;
-            for(r in (c+1):nc) {
-              T_i[r,c] = theta_L[theta_L_mark];
-              theta_L_mark = theta_L_mark + 1;
-            }
-          }
-          for (j in 1:l[i]) {
-            vector[nc] temp = T_i * segment(z_b, b_mark, nc);
-            b_mark = b_mark - 1;
-            for (s in 1:nc) b[b_mark + s] = temp[s];
-            b_mark = b_mark + nc + 1;
-          }
-        }
-      }
-      return b;
-    }
-  
+  * @param X Design matrix for fe
+  * @param Z Design matrix for re, for a single grouping factor
+  * @param Z_id Group indexing for Z
+  * @param gamma The intercept parameter
+  * @param beta Vector of population level parameters
+  * @param bMat Matrix of group level params
+  * @param shift Number of columns in bMat
+  *   that correpond to group level params from prior glmer submodels
+  * @return A vector containing the linear predictor for the glmer submodel
+  */  
+  vector evaluate_eta(matrix X, vector[] Z, int[] Z_id, real gamma, 
+                      vector beta, matrix bMat, int shift) {
+    int N = rows(X);    // num rows in design matrix
+    int K = rows(beta); // num predictors
+    int p = size(Z);    // num group level params
+    vector[N] eta;
+    
+    if (K > 0) eta = X * beta;
+    else eta = rep_vector(0.0, N);
+    
+    for (k in 1:p)
+      for (n in 1:N)
+        eta[n] = eta[n] + (bMat[Z_id[n], k + shift]) * Z[k,n];
+    
+    return eta;
+  } 
+
   /** 
-  * Prior on group-specific parameters
+  * Get the indices corresponding to the lower tri of a square matrix
   *
-  * @param z_b A vector of primitive coefficients
-  * @param z_T A vector of primitives for the unit vectors in the onion method
-  * @param rho A vector radii for the onion method
-  * @param zeta A vector of primitives for the simplexes
-  * @param tau A vector of scale parameters
-  * @param regularization A real array of LKJ hyperparameters
-  * @param delta A real array of concentration paramters
-  * @param shape A vector of shape parameters
-  * @param t An integer indicating the number of group-specific terms
-  * @param p An integer array with the number variables on the LHS of each |
-  * @return nothing
-  */
-    void decov_lp(vector z_b, vector z_T, vector rho, vector zeta, vector tau,
-                  real[] regularization, real[] delta, vector shape,
-                  int t, int[] p) {
-      int pos_reg = 1;
-      int pos_rho = 1;
-      target += normal_lpdf(z_b | 0, 1);
-      target += normal_lpdf(z_T | 0, 1);
-      for (i in 1:t) if (p[i] > 1) {
-        vector[p[i] - 1] shape1;
-        vector[p[i] - 1] shape2;
-        real nu = regularization[pos_reg] + 0.5 * (p[i] - 2);
-        pos_reg = pos_reg + 1;
-        shape1[1] = nu;
-        shape2[1] = nu;
-        for (j in 2:(p[i]-1)) {
-          nu = nu - 0.5;
-          shape1[j] = 0.5 * j;
-          shape2[j] = nu;
-        }
-        target += beta_lpdf(rho[pos_rho:(pos_rho + p[i] - 2)] | shape1, shape2);
-        pos_rho = pos_rho + p[i] - 1;
+  * @param dim The number of rows in the square matrix
+  * @return A vector of indices
+  */ 
+  int[] lower_tri_indices(int dim) {
+    int indices[dim + choose(dim, 2)];
+    int mark = 1;
+    for (r in 1:dim) {
+      for (c in r:dim) {
+        indices[mark] = (r - 1) * dim + c;
+        mark = mark + 1;
       }
-      target += gamma_lpdf(zeta | delta, 1);
-      target += gamma_lpdf(tau  | shape, 1);
     }
+    return indices;
+  }
+  
 }
 data {
   
   //----- Longitudinal submodels
 
-  // NB these design matrices are evaluated AT the observation times.
-  // Also, the response vector, design matrix, predictor meanns, etc
-  // are combined across all M longitudinal submodels.
-  int<lower=0> N;     // num. of obs. across all long. submodels
-  int<lower=1> M;     // num. of long. submodels
-  int<lower=0> NM[M]; // num. of obs. in each long. submodel
-  int<lower=0,upper=N> idx[M,2]; // indices of first and last obs. for each submodel
-  int<lower=0> y_K;   // number of predictors across all long. submodels
-  int<lower=0> KM[M]; // num. of predictors in each long. submodel
-  int<lower=0,upper=y_K> idx_K[M,2]; // index of first/last beta for each submodel
-  vector[N] y;        // outcome vector
-  vector[y_K] xbar;   // predictor means
-  matrix[N,y_K] X;    // centered predictor matrix in the dense case
-
-  // glmer stuff, see table 3 of
-  // https://cran.r-project.org/web/packages/lme4/vignettes/lmer.pdf
-  int<lower=0> t;               // num. terms (maybe 0) with a | in the glmer formula
-  int<lower=1> p[t];            // num. variables on the LHS of each |
-  int<lower=1> l[t];            // num. levels for the factor(s) on the RHS of each |
-  int<lower=0> q;               // conceptually equals \sum_{i=1}^t p_i \times l_i
-  int<lower=0> len_theta_L;     // length of the theta_L vector
+  // number of long. submodels
+  // NB this is fixed equal to 2 for this simplified jm.stan 
+  // file. See the jm.stan file in rstanarm for more general 
+  // code that allows for 1, 2 or 3 longitudinal submodels.
+  int<lower=2,upper=2> M; 
   
-  // design matrices for group-specific terms
-  int<lower=0> num_non_zero;         // number of non-zero elements in the Z matrix
-  vector[num_non_zero] w;            // non-zero elements in the implicit Z matrix
-  int<lower=0> v[num_non_zero];      // column indices for w
-  int<lower=0> u[t > 0 ? N + 1 : 0]; // where the non-zeros start in each row
+  // population level dimensions
+  int<lower=0> y_N[2]; // num observations
+  int<lower=0> y_K[2]; // num predictors
 
+  // population level data
+  // NB these design matrices are evaluated at the observation times
+  vector[y_N[1]] y1; // response vectors
+  vector[y_N[2]] y2;  
+  matrix[y_N[1],y_K[1]] y1_X; // fe design matrix
+  matrix[y_N[2],y_K[2]] y2_X; 
+  vector[y_K[1]] y1_Xbar; // predictor means
+  vector[y_K[2]] y2_Xbar;
+  
+  // group level dimensions
+  int<lower=0> b_N;     // num groups
+  int<lower=0> b_K;     // total num params
+  int<lower=0> b_KM[2]; // num params in each submodel
+
+  // group level data
+  vector[y_N[1]] y1_Z[b_KM[1]]; // re design matrix
+  vector[y_N[2]] y2_Z[b_KM[2]];
+  int<lower=0> y1_Z_id[y_N[1]]; // group ids for y*_Z
+  int<lower=0> y2_Z_id[y_N[2]];
+  
   //----- Event submodel
   
   // data for calculating event submodel linear predictor in GK quadrature
@@ -204,206 +95,222 @@ data {
   int<lower=0> e_K;           // num. of predictors in event submodel
   int<lower=0> a_K;           // num. of association parameters
   int<lower=0> Npat;          // num. individuals
-  int<lower=0> quadnodes;     // num. of nodes for Gauss-Kronrod quadrature 
-  int<lower=0> Npat_times_quadnodes; 
+  int<lower=0> Nevents;       // num. events (ie. not censored)  
+  int<lower=0> qnodes;        // num. of nodes for GK quadrature 
+  int<lower=0> Npat_times_qnodes; 
   int<lower=0> nrow_e_Xq;     // num. rows in event submodel predictor matrix
   vector[nrow_e_Xq] e_times;  // event times and quadrature points
   matrix[nrow_e_Xq,e_K] e_Xq; // predictor matrix (event submodel)
   vector[e_K] e_xbar;         // predictor means (event submodel)
   int<lower=0> basehaz_df;    // df for B-splines baseline hazard
-  matrix[nrow_e_Xq,basehaz_df] 
-    basehaz_X; // design matrix (basis terms) for baseline hazard
-  vector[nrow_e_Xq] 
-    e_d; // event indicator followed by dummy indicators for quadpoints
-  vector[Npat_times_quadnodes] 
-    quadweight; // GK quadrature weights with (b-a)/2 scaling 
+  matrix[nrow_e_Xq,basehaz_df] basehaz_X; // design matrix (basis terms) for baseline hazard
+  vector[Npat_times_qnodes] qwts; // GK quadrature weights with (b-a)/2 scaling 
 
   // data for calculating long. submodel linear predictor in GK quadrature
   // NB these design matrices are evaluated AT the event time and
   // the (unstandardised) quadrature points
-  int<lower=0> nrow_y_Xq[M]; // num. rows in long. predictor matrix
-  int<lower=0> idx_q[M,2];   // indices of first and last rows in eta at quadpoints
-  matrix[sum(nrow_y_Xq),y_K] y_Xq; // predictor matrix (long submodel) at quadpoints, centred     
-  int<lower=0> nnz_Zq;        // number of non-zero elements in the Z matrix (at quadpoints)
-  vector[nnz_Zq] w_Zq;    // non-zero elements in the implicit Z matrix (at quadpoints)
-  int<lower=0> v_Zq[nnz_Zq]; // column indices for w (at quadpoints)
-  int<lower=0> u_Zq[(sum(nrow_y_Xq)+1)]; // where the non-zeros start in each row (at quadpoints)
+  int<lower=0> nrow_y_Xq[2]; // num. rows in long. predictor matrix at quadpoints
+  matrix[nrow_y_Xq[1],y_K[1]] y1_Xq; // fe design matrix at quadpoints
+  matrix[nrow_y_Xq[2],y_K[2]] y2_Xq; 
+  vector[nrow_y_Xq[1]] y1_Zq[b_KM[1]]; // re design matrix at quadpoints
+  vector[nrow_y_Xq[2]] y2_Zq[b_KM[2]];
+  int<lower=0> y1_Zq_id[nrow_y_Xq[1]]; // group indexing for re design matrix
+  int<lower=0> y2_Zq_id[nrow_y_Xq[2]]; 
 
   //----- Hyperparameters for prior distributions
   
   // means for priors
-  vector[M]            y_prior_mean_for_intercept;
-  vector[y_K]          y_prior_mean;
+  // coefficients
+  vector[y_K[1]]       y1_prior_mean;
+  vector[y_K[2]]       y2_prior_mean;
   vector[e_K]          e_prior_mean;
   vector[a_K]          a_prior_mean;
+  vector[M]            y_prior_mean_for_intercept;
   vector<lower=0>[M]   y_prior_mean_for_aux;
   vector[basehaz_df]   e_prior_mean_for_aux;
   
   // scale for priors
-  vector<lower=0>[M]   y_prior_scale_for_intercept;
-  vector<lower=0>[y_K] y_prior_scale;
-  vector<lower=0>[e_K] e_prior_scale;
-  vector<lower=0>[a_K] a_prior_scale;
-  vector<lower=0>[M]   y_prior_scale_for_aux;
+  vector<lower=0>[y_K[1]] y1_prior_scale;
+  vector<lower=0>[y_K[2]] y2_prior_scale;
+  vector<lower=0>[e_K]    e_prior_scale;
+  vector<lower=0>[a_K]    a_prior_scale;
+  vector<lower=0>[M]      y_prior_scale_for_intercept;
+  vector<lower=0>[M]      y_prior_scale_for_aux;
   vector<lower=0>[basehaz_df] e_prior_scale_for_aux;
   
-  // hyperparameters for glmer stuff
-  vector<lower=0>[t] shape; 
-  vector<lower=0>[t] scale;
-  int<lower=0> len_concentration;
-  real<lower=0> concentration[len_concentration];
-  int<lower=0> len_regularization;
-  real<lower=0> regularization[len_regularization];
+  // lkj prior stuff
+  vector<lower=0>[b_K] b_prior_scale;
+  vector<lower=0>[b_K] b_prior_df;
+  real<lower=0> b_prior_regularization;
 }
 transformed data {
-  int<lower=0> len_z_T = 0;
-  int<lower=0> len_var_group = sum(p) * (t > 0);
-  int<lower=0> len_rho = sum(p) - t;
-  int<lower=1> pos = 1;
-  real<lower=0> delta[len_concentration];  
-
-  len_z_T = 0;
-  len_var_group = sum(p) * (t > 0);
-  len_rho = sum(p) - t;
-  pos = 1;
-  for (i in 1:t) {
-    if (p[i] > 1) {
-      for (j in 1:p[i]) {
-        delta[pos] = concentration[j];
-        pos = pos + 1;
-      }
-    }
-    for (j in 3:p[i]) len_z_T = len_z_T + p[i] - 1;
-  }
+  // indexing used to extract lower tri of RE covariance matrix
+  int b_cov_idx[b_K + choose(b_K, 2)];
+  if (b_K > 0) 
+    b_cov_idx = lower_tri_indices(b_K);
 }
 parameters {
-  vector[M] gamma;      // intercepts in long. submodels
-  vector[y_K] y_z_beta; // primitive coefs in long. submodels
+  real y1_gamma; // intercepts in long. submodels
+  real y2_gamma;
+  vector[y_K[1]] y1_z_beta; // primitive coefs in long. submodels
+  vector[y_K[2]] y2_z_beta;
   vector[e_K] e_z_beta; // primitive coefs in event submodel (log hazard ratios)
   vector[a_K] a_z_beta; // primitive assoc params (log hazard ratios)
-  vector<lower=0>[M] y_aux_unscaled; // unscaled residual error SDs 
+  real<lower=0> y1_aux_unscaled; // unscaled residual error SDs 
+  real<lower=0> y2_aux_unscaled; 
   vector[basehaz_df] e_aux_unscaled; // unscaled coefs for baseline hazard      
 
-  // decomposition of group-specific parameters
-  vector[q] z_b;
-  vector[len_z_T] z_T;
-  vector<lower=0,upper=1>[len_rho] rho;
-  vector<lower=0>[len_concentration] zeta;
-  vector<lower=0>[t] tau;
+  // group level params   
+  vector<lower=0>[b_K] b_sd; // group level sds  
+  matrix[b_K,b_N] z_b_mat;   // unscaled group level params 
+  cholesky_factor_corr[b_K > 1 ? b_K : 0] 
+    b_cholesky;              // cholesky factor of corr matrix
 }
 transformed parameters {
-  vector[y_K] y_beta; // combined coefs vector for all long. submodels
-  vector[e_K] e_beta; // coefs in event submodel (log hazard ratios)
-  vector[a_K] a_beta; // association params in event submodel (log hazard ratios)
-  vector[M] y_aux;  // residual error SDs for long. submodels
-  vector[basehaz_df] e_aux;  // weibull shape
-  vector[q] b;   // group-specific params (ordered by submodel, 1:M)
-  vector[len_theta_L] theta_L;
+  vector[y_K[1]] y1_beta;     // population level params for long. submodels
+  vector[y_K[2]] y2_beta;
+  real y1_aux; // residual error SDs for long. submodels
+  real y2_aux;  
+  vector[e_K] e_beta;       // coefs in event submodel (log hazard ratios)
+  vector[a_K] a_beta;       // assoc params in event submodel (log hazard ratios) 
+  vector[basehaz_df] e_aux; // b-spline coefs for baseline hazard
+  matrix[b_N,b_K] b_mat;    // group level params
   
-  // coefficients and association parameters 
-  y_beta = y_z_beta .* y_prior_scale + y_prior_mean;
+  // coefs for long. submodels
+  y1_beta = y1_z_beta .* y1_prior_scale + y1_prior_mean;
+  y2_beta = y2_z_beta .* y2_prior_scale + y2_prior_mean;
+
+  // coefs for event submodel (incl. association parameters)
   e_beta = e_z_beta .* e_prior_scale + e_prior_mean;
   a_beta = a_z_beta .* a_prior_scale + a_prior_mean;
   
-  // auxiliary parameters
-  y_aux = y_aux_unscaled .* y_prior_scale_for_aux + y_prior_mean_for_aux;
+  // residual error SDs for long. submodels
+  y1_aux = y1_aux_unscaled * y_prior_scale_for_aux[1] + y_prior_mean_for_aux[1];
+  y2_aux = y2_aux_unscaled * y_prior_scale_for_aux[2] + y_prior_mean_for_aux[2];
+
+  // b-spline coefs for baseline hazard
   e_aux = e_aux_unscaled .* e_prior_scale_for_aux + e_prior_mean_for_aux;
  
-  // group-specific parameters
-  theta_L = make_theta_L(len_theta_L, p, 1.0, tau, scale, zeta, rho, z_T);
-  b = make_b(z_b, theta_L, p, l);
+  // group level params
+  if (b_K == 1) 
+    b_mat = (b_sd[1] * z_b_mat)'; 
+  else if (b_K > 1) 
+    b_mat = (diag_pre_multiply(b_sd, b_cholesky) * z_b_mat)';
 }
 model {
 
   //---- Log-lik for longitudinal submodels
 
   {
-    vector[N] y_eta; // linear predictor for long. submodels 
+    // declare linear predictors
+    vector[y_N[1]] y1_eta; 
+    vector[y_N[2]] y2_eta;
+
+    // evaluate linear predictor for each long. submodel
+    y1_eta = evaluate_eta(y1_X, y1_Z, y1_Z_id, y1_gamma, y1_beta, b_mat, 0);
+    y2_eta = evaluate_eta(y2_X, y2_Z, y2_Z_id, y2_gamma, y2_beta, b_mat, b_KM[1]);
     
-    // evaluate linear predictor for all long. submodels
-    y_eta = X * y_beta + csr_matrix_times_vector(N, q, w, v, u, b);
-  
-    // evaluate linear predictor for just submodel m and accumulate log-lik
-    for (m in 1:M) {
-      vector[NM[m]] y_eta_m; 
-      y_eta_m = y_eta[idx[m,1]:idx[m,2]] + gamma[m];
-      target += normal_lpdf(y[idx[m,1]:idx[m,2]] | y_eta_m, y_aux[m]);
-    }	  
+    // increment the target with the log-lik
+    target += normal_lpdf(y1 | y1_eta, y1_aux);
+    target += normal_lpdf(y2 | y2_eta, y2_aux);
   }
   
   //----- Log-lik for event submodel (Gauss-Kronrod quadrature)
   
   {
-    vector[sum(nrow_y_Xq)] y_eta_q; 
+    vector[nrow_y_Xq[1]] y1_eta_q; 
+    vector[nrow_y_Xq[2]] y2_eta_q;
     vector[nrow_e_Xq] e_eta_q; 
-    vector[nrow_e_Xq] log_basehaz;
-    vector[nrow_e_Xq] ll_haz_q;
-    vector[Npat] ll_haz_eventtime;
-    vector[Npat_times_quadnodes] ll_surv_eventtime;
-    real ll_event;
+    vector[nrow_e_Xq] log_basehaz;  // log baseline hazard AT event time and quadrature points
+    vector[nrow_e_Xq] log_haz_q;    // log hazard AT event time and quadrature points
+    vector[Nevents] log_haz_etimes; // log hazard AT the event time only
+    vector[Npat_times_qnodes] log_haz_qtimes; // log hazard AT the quadrature points
     
     // Event submodel: linear predictor at event time and quadrature points
     e_eta_q = e_Xq * e_beta;
     
     // Long. submodel: linear predictor at event time and quadrature points
-    y_eta_q = y_Xq * y_beta + 
-      csr_matrix_times_vector(sum(nrow_y_Xq), q, w_Zq, v_Zq, u_Zq, b);
+    y1_eta_q = evaluate_eta(y1_Xq, y1_Zq, y1_Zq_id, y1_gamma, y1_beta, b_mat, 0);
+    y2_eta_q = evaluate_eta(y2_Xq, y2_Zq, y2_Zq_id, y2_gamma, y2_beta, b_mat, b_KM[1]);
   
     // Event submodel: add on contribution from association structure to
     // the linear predictor at event time and quadrature points
-    for (m in 1:M) {
-      vector[nrow_y_Xq[m]] y_eta_q_m;
-      y_eta_q_m = y_eta_q[idx_q[m,1]:idx_q[m,2]] + gamma[m];
-      e_eta_q = e_eta_q + a_beta[m] * y_eta_q_m;
-    }	
+    e_eta_q = e_eta_q + a_beta[1] * y1_eta_q + a_beta[2] * y2_eta_q;
     
     // Log baseline hazard at event time and quadrature points
-    log_basehaz = basehaz_X * e_aux;	
+    log_basehaz = basehaz_X * e_aux; 
     
     // Log hazard at event time and quadrature points
-    ll_haz_q = e_d .* (log_basehaz + e_eta_q);
-    
-    // Log hazard contribution to the likelihood
-    ll_haz_eventtime = segment(ll_haz_q, 1, Npat);
-    
-    // Log survival contribution to the likelihood, obtained by summing 
-    // over the quadrature points to get the approximate integral
-    // (NB quadweight already incorporates the (b-a)/2 scaling such that the
-    // integral is evaluated over limits (a,b) rather than (-1,+1))
-    ll_surv_eventtime = quadweight .* 
-      exp(segment(ll_haz_q, Npat + 1, Npat_times_quadnodes));        
-    
+    log_haz_q = log_basehaz + e_eta_q;
+  
+    // Log hazard at event times only
+    log_haz_etimes = head(log_haz_q, Nevents);
+  
+    // Log hazard at quadrature points only
+    log_haz_qtimes = tail(log_haz_q, Npat_times_qnodes);
+ 
     // Log likelihood for event submodel
-    ll_event = sum(ll_haz_eventtime) - sum(ll_surv_eventtime);
-    target += ll_event;  
+    // NB The first term is the log hazard contribution to the log  
+    // likelihood for the event submodel. The second term is the log  
+    // survival contribution to the log likelihood for the event submodel.  
+    // The latter is obtained by summing over the quadrature points to get 
+    // the approximate integral (i.e. cumulative hazard). Note that the
+    // 'qwts' vector already incorporates (b-a)/2 scaling such that the
+    // integral is evaluated over limits (a,b) rather than (-1,+1), where
+    // 'a' is baseline, i.e. time 0, and 'b' is the event or censoring
+    // time for the individual.
+    target += sum(log_haz_etimes) - dot_product(qwts, exp(log_haz_qtimes));  
   }    
     
   //----- Log-priors
     
-    // intercepts
-    for (m in 1:M)
-      target += normal_lpdf(gamma[m] | 
-        y_prior_mean_for_intercept, y_prior_scale_for_intercept);    
+    // intercepts for long. submodels
+    target += normal_lpdf(y1_gamma | 
+      y_prior_mean_for_intercept[1], y_prior_scale_for_intercept[1]);    
+    target += normal_lpdf(y2_gamma | 
+      y_prior_mean_for_intercept[2], y_prior_scale_for_intercept[2]);    
 
-    // coefficients    
-    target += normal_lpdf(y_z_beta | 0, 1);
+    // coefficients for long. submodels   
+    target += normal_lpdf(y1_z_beta | 0, 1);
+    target += normal_lpdf(y2_z_beta | 0, 1);
+    
+    // coefficients for event submodel
     target += normal_lpdf(e_z_beta | 0, 1);
     target += normal_lpdf(a_z_beta | 0, 1);
     
-    // auxiliary parameters
-    target += normal_lpdf(y_aux_unscaled | 0, 1);
+    // residual error SDs for long. submodels
+    target += normal_lpdf(y1_aux_unscaled | 0, 1);
+    target += normal_lpdf(y2_aux_unscaled | 0, 1);
+    
+    // b-spline coefs for baseline hazard
     target += normal_lpdf(e_aux_unscaled | 0, 1);
 
-    // group-specific parameters
-    decov_lp(z_b, z_T, rho, zeta, tau, regularization, delta, shape, t, p);
+    // group level terms
+      // sds
+      target += student_t_lpdf(b_sd | b_prior_df, 0, b_prior_scale);
+      // primitive coefs
+      target += normal_lpdf(to_vector(z_b_mat) | 0, 1); 
+      // corr matrix
+      if (b_K > 1) 
+        target += lkj_corr_cholesky_lpdf(b_cholesky | b_prior_regularization);
 }
 generated quantities {
-  real alpha[M]; // intercept for long. submodels
+  real y1_alpha; // transformed intercepts for long. submodels
+  real y2_alpha;
+  real e_alpha; // transformed intercept for event submodel 
+  vector[size(b_cov_idx)] b_cov; // var-cov for REs
+    
+  // Transformed intercepts for long. submodels
+  y1_alpha = y1_gamma - dot_product(y1_Xbar, y1_beta);
+  y2_alpha = y2_gamma - dot_product(y2_Xbar, y2_beta);
   
-  // evaluate intercept after correcting for centered predictors
-  for (m in 1:M) {
-    int K1 = idx_K[m,1]; 
-    int K2 = idx_K[m,2]; 
-    alpha[m] = gamma[m] - dot_product(xbar[K1:K2], y_beta[K1:K2]);
-  }
+  // Transformed intercept for event submodel 
+  e_alpha = 0.0 - dot_product(e_xbar, e_beta);
+  
+  // Transform variance-covariance matrix for REs
+  if (b_K == 1)
+    b_cov[1] = b_sd[1] * b_sd[1];
+  else
+    b_cov = to_vector(quad_form_diag(
+      multiply_lower_tri_self_transpose(b_cholesky), b_sd))[b_cov_idx];
 }
